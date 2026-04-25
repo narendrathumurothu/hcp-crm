@@ -464,14 +464,14 @@ def run_agent(message: str) -> dict:
         result = app_graph.invoke(initial_state)
         messages = result["messages"]
 
-        # Final text response తీసుకోవడం
+        # Final text response 
         final_response = ""
         for msg in reversed(messages):
             if hasattr(msg, "content") and isinstance(msg.content, str) and msg.content.strip():
                 final_response = msg.content
                 break
 
-        # Intent detect చేయడం
+        # Intent detect 
         msg_lower = message.lower()
         if any(w in msg_lower for w in ["log", "met", "visited", "called", "discussed"]):
             intent = "LOG"
@@ -490,7 +490,7 @@ def run_agent(message: str) -> dict:
         else:
             intent = "GENERAL"
 
-        # Follow-up suggestions extract చేయడం
+        # Follow-up suggestions
         followup_suggestions = []
         for msg in reversed(messages):
             if hasattr(msg, "content") and isinstance(msg.content, str):
