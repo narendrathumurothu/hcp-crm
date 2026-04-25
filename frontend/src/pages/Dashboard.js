@@ -15,8 +15,11 @@ const Dashboard = () => {
 
   useEffect(() => {
     dispatch(fetchInteractions());
-    API.get('/api/stats').then((res) => setStats(res.data));
   }, [dispatch]);
+
+  useEffect(() => {
+    API.get('/api/stats').then((res) => setStats(res.data));
+  }, [list]);
 
   const handleDelete = (id) => {
     if (window.confirm('Delete this interaction?')) {

@@ -383,11 +383,12 @@ const LogInteraction = () => {
 
             <div style={{ display: 'flex', gap: '8px' }}>
               <textarea
-                style={{ ...inputStyle, flex: 1, height: '40px', resize: 'none', fontSize: '12px' }}
+                style={{ ...inputStyle, flex: 1, height: '40px', resize: 'none', fontSize: '12px', opacity: loading ? 0.6 : 1 }}
                 placeholder="Describe interaction..."
                 value={chatMsg}
                 onChange={(e) => setChatMsg(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChat(); } }}
+                disabled={loading}
               />
               <button 
                 onClick={handleAiVoice} 
@@ -397,10 +398,11 @@ const LogInteraction = () => {
                   padding: '8px 12px'
                 }}
                 title="Speak to AI"
+                disabled={loading}
               >
                 {isAiRecording ? '🛑' : '🎙️ AI'}
               </button>
-              <button onClick={handleChat} style={chatBtnStyle}>Log</button>
+              <button onClick={handleChat} style={{...chatBtnStyle, opacity: loading ? 0.6 : 1}} disabled={loading}>Log</button>
             </div>
           </div>
         </div>

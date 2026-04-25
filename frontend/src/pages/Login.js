@@ -8,10 +8,23 @@ const Login = () => {
   const navigate = useNavigate();
   const { loading, error, token } = useSelector((state) => state.auth);
   const [form, setForm] = useState({ email: '', password: '' });
+  const [longLoading, setLongLoading] = useState(false);
 
   useEffect(() => {
     if (token) navigate('/dashboard');
   }, [token, navigate]);
+
+  useEffect(() => {
+    let timer;
+    if (loading) {
+      timer = setTimeout(() => {
+        setLongLoading(true);
+      }, 3000); // Trigger after 3 seconds
+    } else {
+      setLongLoading(false);
+    }
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -58,7 +71,9 @@ const Login = () => {
           </div>
 
           <button type="submit" style={btnStyle} disabled={loading}>
-            {loading ? '⏳ Signing in...' : '🔐 Sign In'}
+            {loading 
+              ? (longLoading ? '⏳ Waking up free server (approx 45s)...' : '⏳ Signing in...') 
+              : '🔐 Sign In'}
           </button>
         </form>
 
