@@ -81,6 +81,51 @@ def get_samples(db: Session = Depends(get_db)):
 def get_interactions(db: Session = Depends(get_db)):
     return db.query(Interaction).order_by(Interaction.created_at.desc()).all()
 
+@app.get("/api/interactions/{id}")
+def get_interaction(id: int, db: Session = Depends(get_db)):
+    interaction = db.query(Interaction).filter(Interaction.id == id).first()
+    if not interaction:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    return interaction
+
+@app.post("/api/interactions")
+def create_interaction(data: InteractionCreate, db: Session = Depends(get_db)):
+    interaction = Interaction(**data.model_dump())
+    db.add(interaction)
+    db.commit()
+    db.refresh(interaction)
+    return interaction
+
+@app.put("/api/interactions/{id}")
+def update_interaction(id: int, data: InteractionUpdate, db: Session = Depends(get_db)):
+    interaction = db.query(Interaction).filter(Interaction.id == id).first()
+    if not interaction:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(interaction, key, value)
+    db.commit()
+    db.refresh(interaction)
+    return interaction
+
+@app.delete("/api/interactions/{id}")
+def delete_interaction(id: int, db: Session = Depends(get_db)):
+    interaction = db.query(Interaction).filter(Interaction.id == id).first()
+    if not interaction:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    db.delete(interaction)
+    db.commit()
+    return {"message": "Deleted"}
+
+@app.get("/api/search")
+def search_interactions(q: str, db: Session = Depends(get_db)):
+    results = db.query(Interaction).filter(
+        (Interaction.hcp_name.ilike(f"%{q}%")) |
+        (Interaction.topics.ilike(f"%{q}%")) |
+        (Interaction.sentiment.ilike(f"%{q}%"))
+    ).all()
+    return {"results": results}
+
 @app.get("/api/stats")
 def get_stats(db: Session = Depends(get_db)):
     interactions = db.query(Interaction).all()
