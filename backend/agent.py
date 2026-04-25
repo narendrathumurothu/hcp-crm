@@ -3,19 +3,18 @@ from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
-from typing import TypedDict, Annotated, Any
+from typing import TypedDict, Annotated
 import operator
 import json
 import os
 from dotenv import load_dotenv
 from database import SessionLocal
 from models import Interaction
-from sqlalchemy import func
 
 load_dotenv()
 
 llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="gemma2-9b-it",
     api_key=os.getenv("GROQ_API_KEY"),
     temperature=0.3
 )
@@ -42,11 +41,10 @@ def log_interaction(text: str) -> str:
 
     Text: {text}
 
-    Return only the JSON, no extra text.
+    Return only the JSON, no extra text, no markdown.
     """
-    response = llm.invoke([HumanMessage(content=extraction_prompt)])
-    
     try:
+        response = llm.invoke([HumanMessage(content=extraction_prompt)])
         raw = response.content.strip()
         if "```" in raw:
             raw = raw.split("```")[1].replace("json", "").strip()
@@ -65,11 +63,13 @@ def log_interaction(text: str) -> str:
         db.add(interaction)
         db.commit()
         db.refresh(interaction)
+        interaction_id = interaction.id
         db.close()
 
         return json.dumps({
             "status": "success",
-            "message": f"Interaction with {data.get('hcp_name')} logged successfully! ID: {interaction.id}",
+            "message": f"Interaction with {data.get('hcp_name')} logged successfully! ID: {interaction_id}",
+            "interaction_id": interaction_id,
             "data": data
         })
     except Exception as e:
@@ -80,24 +80,51 @@ def log_interaction(text: str) -> str:
 # TOOL 2: Edit Interaction
 # ─────────────────────────────────────────
 @tool
-def edit_interaction(interaction_id: int, updates: str) -> str:
+def edit_interaction(interaction_id: str, updates: str) -> str:
     """
     Edits/updates an existing interaction in the database by its ID.
-    'updates' should be a JSON string with fields to update.
+    interaction_id must be a string of digits like "1" or "2".
+    updates should be a JSON string with fields to update.
     Use this when user wants to modify or correct a logged interaction.
     """
     try:
-        update_data = json.loads(updates)
+        # String అయినా int గా safely convert చేయడం
+        clean_id = str(interaction_id).strip().replace('"', '').replace("'", "")
+        interaction_id_int = int(clean_id)
+
+        # updates string అయితే parse చేయడం
+        if isinstance(updates, str):
+            updates_clean = updates.strip()
+            if "```" in updates_clean:
+                updates_clean = updates_clean.split("```")[1].replace("json", "").strip()
+            update_data = json.loads(updates_clean)
+        else:
+            update_data = updates
+
         db = SessionLocal()
-        interaction = db.query(Interaction).filter(Interaction.id == interaction_id).first()
+        interaction = db.query(Interaction).filter(
+            Interaction.id == interaction_id_int
+        ).first()
 
         if not interaction:
             db.close()
-            return json.dumps({"status": "error", "message": f"Interaction ID {interaction_id} not found."})
+            return json.dumps({
+                "status": "error",
+                "message": f"Interaction ID {interaction_id_int} not found. Use search_interactions to find the correct ID."
+            })
 
+        allowed_fields = [
+            "hcp_name", "interaction_type", "date", "time",
+            "attendees", "topics", "materials_shared",
+            "samples_distributed", "sentiment", "outcomes",
+            "follow_up_actions", "ai_summary"
+        ]
+
+        updated = []
         for key, value in update_data.items():
-            if hasattr(interaction, key):
+            if key in allowed_fields and hasattr(interaction, key):
                 setattr(interaction, key, value)
+                updated.append(key)
 
         db.commit()
         db.refresh(interaction)
@@ -105,8 +132,18 @@ def edit_interaction(interaction_id: int, updates: str) -> str:
 
         return json.dumps({
             "status": "success",
-            "message": f"Interaction ID {interaction_id} updated successfully.",
-            "updated_fields": list(update_data.keys())
+            "message": f"Interaction ID {interaction_id_int} updated successfully.",
+            "updated_fields": updated
+        })
+    except ValueError:
+        return json.dumps({
+            "status": "error",
+            "message": f"Invalid interaction ID '{interaction_id}'. Must be a number like 1 or 2."
+        })
+    except json.JSONDecodeError as e:
+        return json.dumps({
+            "status": "error",
+            "message": f"Invalid updates format. Must be valid JSON. Error: {str(e)}"
         })
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
@@ -129,7 +166,10 @@ def get_hcp_profile(hcp_name: str) -> str:
         db.close()
 
         if not interactions:
-            return json.dumps({"status": "not_found", "message": f"No interactions found for {hcp_name}"})
+            return json.dumps({
+                "status": "not_found",
+                "message": f"No interactions found for {hcp_name}"
+            })
 
         sentiments = [i.sentiment for i in interactions if i.sentiment]
         positive = sentiments.count("Positive")
@@ -149,7 +189,11 @@ def get_hcp_profile(hcp_name: str) -> str:
             "status": "success",
             "hcp_name": hcp_name,
             "total_interactions": len(interactions),
-            "sentiment_summary": {"Positive": positive, "Neutral": neutral, "Negative": negative},
+            "sentiment_summary": {
+                "Positive": positive,
+                "Neutral": neutral,
+                "Negative": negative
+            },
             "recent_interactions": history[:5]
         })
     except Exception as e:
@@ -167,7 +211,8 @@ def analyze_sentiment(text: str) -> str:
     Use this when user wants to understand the tone or sentiment of a meeting.
     """
     prompt = f"""
-    Analyze the sentiment of this HCP interaction and return ONLY a JSON object with:
+    Analyze the sentiment of this HCP interaction.
+    Return ONLY a JSON object with:
     - sentiment: "Positive", "Neutral", or "Negative"
     - confidence: "High", "Medium", or "Low"
     - reasoning: one sentence explanation
@@ -175,10 +220,10 @@ def analyze_sentiment(text: str) -> str:
 
     Text: {text}
 
-    Return only the JSON, no extra text.
+    Return only the JSON, no extra text, no markdown.
     """
-    response = llm.invoke([HumanMessage(content=prompt)])
     try:
+        response = llm.invoke([HumanMessage(content=prompt)])
         raw = response.content.strip()
         if "```" in raw:
             raw = raw.split("```")[1].replace("json", "").strip()
@@ -205,7 +250,10 @@ def suggest_followup(hcp_name: str) -> str:
         db.close()
 
         if not interactions:
-            return json.dumps({"status": "not_found", "message": f"No history found for {hcp_name}"})
+            return json.dumps({
+                "status": "not_found",
+                "message": f"No history found for {hcp_name}"
+            })
 
         history_text = "\n".join([
             f"- {i.interaction_type} on {i.date}: Topics: {i.topics}, Outcomes: {i.outcomes}, Sentiment: {i.sentiment}"
@@ -213,7 +261,7 @@ def suggest_followup(hcp_name: str) -> str:
         ])
 
         prompt = f"""
-        Based on these recent interactions with Dr. {hcp_name}:
+        Based on these recent interactions with {hcp_name}:
         {history_text}
 
         Suggest 3 specific follow-up actions for a pharma field representative.
@@ -222,14 +270,19 @@ def suggest_followup(hcp_name: str) -> str:
         - priority: "High", "Medium", or "Low"
         - best_time_to_contact: suggestion string
 
-        Return only the JSON, no extra text.
+        Return only the JSON, no extra text, no markdown.
         """
         response = llm.invoke([HumanMessage(content=prompt)])
         raw = response.content.strip()
         if "```" in raw:
             raw = raw.split("```")[1].replace("json", "").strip()
         data = json.loads(raw)
-        return json.dumps({"status": "success", "hcp_name": hcp_name, "followup": data})
+
+        return json.dumps({
+            "status": "success",
+            "hcp_name": hcp_name,
+            "followup": data
+        })
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
@@ -255,7 +308,10 @@ def search_interactions(query: str) -> str:
         db.close()
 
         if not results:
-            return json.dumps({"status": "not_found", "message": f"No interactions found matching '{query}'"})
+            return json.dumps({
+                "status": "not_found",
+                "message": f"No interactions found matching '{query}'"
+            })
 
         data = [{
             "id": i.id,
@@ -283,9 +339,9 @@ def search_interactions(query: str) -> str:
 @tool
 def get_interaction_stats(hcp_name: str = "") -> str:
     """
-    Returns analytics and statistics about interactions - total counts, sentiment breakdown,
-    interaction types, and frequency. If hcp_name is provided, returns stats for that HCP only.
-    Use this when user asks for analytics, reports, or overview of interactions.
+    Returns analytics and statistics about interactions.
+    If hcp_name is provided, returns stats for that HCP only.
+    Use this when user asks for analytics, reports, or overview.
     """
     try:
         db = SessionLocal()
@@ -301,7 +357,10 @@ def get_interaction_stats(hcp_name: str = "") -> str:
 
         total = len(interactions)
         if total == 0:
-            return json.dumps({"status": "not_found", "message": "No interactions found."})
+            return json.dumps({
+                "status": "not_found",
+                "message": "No interactions found."
+            })
 
         sentiments = {"Positive": 0, "Neutral": 0, "Negative": 0}
         types = {}
@@ -328,9 +387,6 @@ def get_interaction_stats(hcp_name: str = "") -> str:
 # ─────────────────────────────────────────
 class AgentState(TypedDict):
     messages: Annotated[list, operator.add]
-    intent: str
-    extracted_data: dict
-    followup_suggestions: list
 
 
 # ─────────────────────────────────────────
@@ -352,14 +408,19 @@ SYSTEM_PROMPT = """You are an AI assistant for a pharmaceutical CRM system helpi
 
 You have access to 7 tools:
 1. log_interaction - Log a new HCP interaction from natural language
-2. edit_interaction - Edit an existing interaction by ID
+2. edit_interaction - Edit an existing interaction by ID (interaction_id must be string of digits like "1")
 3. get_hcp_profile - Get full profile and history of an HCP
 4. analyze_sentiment - Analyze sentiment of interaction text
 5. suggest_followup - Get AI follow-up suggestions for an HCP
 6. search_interactions - Search interactions by keyword
 7. get_interaction_stats - Get analytics and statistics
 
-Always use the appropriate tool based on user intent. Be helpful, concise, and professional."""
+IMPORTANT RULES:
+- For edit_interaction: interaction_id must always be a string like "1", "2", "3"
+- For edit_interaction: updates must be valid JSON string like {"sentiment": "Positive"}
+- Before editing, use search_interactions to find the correct interaction ID
+- Always be helpful, concise, and professional
+- If user says "edit Dr. Raju", first search for Dr. Raju to get the ID, then edit"""
 
 
 def agent_node(state: AgentState):
@@ -381,35 +442,36 @@ graph = StateGraph(AgentState)
 graph.add_node("agent", agent_node)
 graph.add_node("tools", tool_node)
 graph.set_entry_point("agent")
-graph.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+graph.add_conditional_edges(
+    "agent",
+    should_continue,
+    {"tools": "tools", END: END}
+)
 graph.add_edge("tools", "agent")
 
 app_graph = graph.compile()
 
 
 # ─────────────────────────────────────────
-# Main Run Function (called from main.py)
+# Main Run Function
 # ─────────────────────────────────────────
 def run_agent(message: str) -> dict:
     try:
         initial_state = {
-            "messages": [HumanMessage(content=message)],
-            "intent": "",
-            "extracted_data": {},
-            "followup_suggestions": []
+            "messages": [HumanMessage(content=message)]
         }
 
         result = app_graph.invoke(initial_state)
         messages = result["messages"]
 
-        # Get final text response
+        # Final text response తీసుకోవడం
         final_response = ""
         for msg in reversed(messages):
             if hasattr(msg, "content") and isinstance(msg.content, str) and msg.content.strip():
                 final_response = msg.content
                 break
 
-        # Detect intent
+        # Intent detect చేయడం
         msg_lower = message.lower()
         if any(w in msg_lower for w in ["log", "met", "visited", "called", "discussed"]):
             intent = "LOG"
@@ -417,7 +479,7 @@ def run_agent(message: str) -> dict:
             intent = "EDIT"
         elif any(w in msg_lower for w in ["profile", "history", "about dr", "about doctor"]):
             intent = "PROFILE"
-        elif any(w in msg_lower for w in ["sentiment", "feeling", "tone"]):
+        elif any(w in msg_lower for w in ["sentiment", "feeling", "tone", "analyze"]):
             intent = "SENTIMENT"
         elif any(w in msg_lower for w in ["follow", "next step", "suggest"]):
             intent = "FOLLOWUP"
@@ -428,11 +490,23 @@ def run_agent(message: str) -> dict:
         else:
             intent = "GENERAL"
 
+        # Follow-up suggestions extract చేయడం
+        followup_suggestions = []
+        for msg in reversed(messages):
+            if hasattr(msg, "content") and isinstance(msg.content, str):
+                try:
+                    data = json.loads(msg.content)
+                    if "followup" in data and "suggestions" in data["followup"]:
+                        followup_suggestions = data["followup"]["suggestions"]
+                        break
+                except Exception:
+                    pass
+
         return {
-            "response": final_response,
+            "response": final_response or "Done!",
             "intent": intent,
             "extracted_data": {},
-            "followup_suggestions": []
+            "followup_suggestions": followup_suggestions
         }
 
     except Exception as e:
