@@ -20,7 +20,7 @@ from models import Interaction, Reminder, SampleInventory
 load_dotenv()
 
 llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="llama-3.1-8b-instant",
     api_key=os.getenv("GROQ_API_KEY", ""),
     temperature=0.1
 )
@@ -170,7 +170,7 @@ SYSTEM_PROMPT = """You are an expert Pharmaceutical CRM Assistant. Your goal is 
 4. If the user asks to delete or remove a record, USE the `delete_interaction` tool.
 5. If the user mentions giving a sample, USE the `track_sample` tool.
 6. If the user mentions a follow-up or scheduling something in the future, USE the `add_reminder` tool.
-7. DO NOT guess update values. Ask if missing.
+7. DO NOT ask the user for missing information. If a parameter is not explicitly provided by the user, leave it empty or use a reasonable default (like "Not specified" or current date). Execute the tool immediately!
 8. Respond in the same language the user uses (Telugu, Hindi, or English).
 9. Use thread history to remember the current doctor."""
 
