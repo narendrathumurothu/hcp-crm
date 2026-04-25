@@ -88,11 +88,11 @@ def edit_interaction(interaction_id: str, updates: str) -> str:
     Use this when user wants to modify or correct a logged interaction.
     """
     try:
-        # String అయినా int గా safely convert చేయడం
+        # Strip and clean interaction_id to ensure it's a valid integer
         clean_id = str(interaction_id).strip().replace('"', '').replace("'", "")
         interaction_id_int = int(clean_id)
 
-        # updates string అయితే parse చేయడం
+        # Parse updates JSON string
         if isinstance(updates, str):
             updates_clean = updates.strip()
             if "```" in updates_clean:
