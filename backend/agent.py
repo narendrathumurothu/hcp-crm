@@ -1,6 +1,7 @@
 import operator
 import json
 import os
+import sqlite3
 from typing import TypedDict, Annotated
 from dotenv import load_dotenv
 
@@ -9,35 +10,32 @@ from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
+
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-# Import database and models
+# Import your database session and models
 from database import SessionLocal
 from models import Interaction, Reminder, SampleInventory
 
 load_dotenv()
 
-# Initialize ChatGroq LLM
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
-    api_key=os.getenv("GROQ_API_KEY"),
+    api_key=os.getenv("GROQ_API_KEY", ""),
     temperature=0.1
 )
 
 # ──────────────────────────────────────────────────────────
-# CRM TOOLS (Handles DB operations internally)
+# CRM TOOLS DEFINITION
 # ──────────────────────────────────────────────────────────
 
 @tool
 def log_interaction(text: str) -> str:
-    """Extract details and log a new HCP visit from text."""
+    """Extract and log a new HCP interaction."""
     prompt = f"Extract interaction details from: {text}. Return ONLY valid JSON."
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
-        # Clean potential markdown from response
-        raw = response.content.strip().replace("```json", "").replace("```", "")
-        data = json.loads(raw)
-        
+        data = json.loads(response.content.strip().replace("```json", "").replace("```", ""))
         with SessionLocal() as db:
             interaction = Interaction(**data)
             db.add(interaction)
@@ -49,10 +47,9 @@ def log_interaction(text: str) -> str:
 
 @tool
 def edit_interaction(hcp_name_or_id: str, field_to_update: str, new_value: str) -> str:
-    """Edit specific field of an interaction. REQUIRED: Field name and New Value."""
+    """Update a specific field of an existing interaction."""
     try:
         with SessionLocal() as db:
-            # Search by ID or latest visit by Name
             try:
                 i_id = int(str(hcp_name_or_id).strip())
                 record = db.query(Interaction).filter(Interaction.id == i_id).first()
@@ -70,7 +67,7 @@ def edit_interaction(hcp_name_or_id: str, field_to_update: str, new_value: str) 
 
 @tool
 def add_reminder(hcp_name: str, task: str, date: str, time: str) -> str:
-    """Set a reminder for follow-ups (e.g. 'Call Dr. Sharma tomorrow')."""
+    """Set a reminder for a future task."""
     try:
         with SessionLocal() as db:
             new_rem = Reminder(hcp_name=hcp_name, task=task, reminder_date=date, reminder_time=time)
@@ -82,46 +79,42 @@ def add_reminder(hcp_name: str, task: str, date: str, time: str) -> str:
 
 @tool
 def track_sample(hcp_name: str, medicine_name: str, quantity: int) -> str:
-    """Record medical samples given to a doctor."""
+    """Track medical samples distributed."""
     try:
         with SessionLocal() as db:
             sample = SampleInventory(hcp_name=hcp_name, medicine_name=medicine_name, quantity=quantity)
             db.add(sample)
             db.commit()
-            return json.dumps({"status": "success", "message": f"Sample logged for {hcp_name}"})
+            return json.dumps({"status": "success", "message": f"Logged {medicine_name} for {hcp_name}"})
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
 @tool
 def get_hcp_profile(hcp_name: str) -> str:
-    """Get visit history and stats for an HCP."""
+    """Get history and analytics of a specific doctor."""
     try:
         with SessionLocal() as db:
             records = db.query(Interaction).filter(Interaction.hcp_name.ilike(f"%{hcp_name}%")).all()
+            if not records: return json.dumps({"status": "not_found"})
             return json.dumps({"hcp": hcp_name, "total_visits": len(records)})
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
 # ──────────────────────────────────────────────────────────
-# LANGGRAPH CONFIGURATION (Memory & Multilingual)
+# LANGGRAPH CONFIGURATION
 # ──────────────────────────────────────────────────────────
 
 class AgentState(TypedDict):
     messages: Annotated[list, operator.add]
 
-# Tool list
 tools = [log_interaction, edit_interaction, add_reminder, track_sample, get_hcp_profile]
 tool_node = ToolNode(tools)
 llm_with_tools = llm.bind_tools(tools)
 
-# Added Hindi & Telugu support in System Prompt
 SYSTEM_PROMPT = """You are a Pharmaceutical CRM Assistant. 
-
-STRICT OPERATING RULES:
-1. MULTILINGUAL: If the user speaks in Telugu, respond in Telugu. If the user speaks in Hindi, respond in Hindi.
-2. NO HALLUCINATIONS: If 'edit_interaction' is needed but details are missing, ask the user for the field and value.
-3. CONTEXT: Use thread history to remember which doctor you are talking about.
-4. Professional tone at all times."""
+1. DO NOT guess update values. Ask if missing.
+2. Respond in the same language the user uses (Telugu, Hindi, or English).
+3. Use thread history to remember the current doctor."""
 
 def agent_node(state: AgentState):
     messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
@@ -131,8 +124,9 @@ def should_continue(state: AgentState):
     last = state["messages"][-1]
     return "tools" if hasattr(last, "tool_calls") and last.tool_calls else END
 
-# Sqlite Memory for persistent threads
-memory = SqliteSaver.from_conn_string(":memory:")
+# Database connection for checkpoints
+conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
+memory = SqliteSaver(conn)
 
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", agent_node)
@@ -143,27 +137,10 @@ workflow.add_edge("tools", "agent")
 
 app_graph = workflow.compile(checkpointer=memory)
 
-# ──────────────────────────────────────────────────────────
-# FINAL WRAPPER FUNCTION
-# ──────────────────────────────────────────────────────────
-
-def run_agent(message: str, thread_id: str = "default"):
-    """Entry point for FastAPI. thread_id ensures persistent memory."""
+def run_agent(message: str, thread_id: str = "default_session"):
     config = {"configurable": {"thread_id": thread_id}}
     try:
         result = app_graph.invoke({"messages": [HumanMessage(content=message)]}, config)
-        final_msg = result["messages"][-1].content
-        
-        # Simple intent logic for your frontend
-        intent = "GENERAL"
-        for msg in reversed(result["messages"]):
-            if hasattr(msg, "tool_calls") and msg.tool_calls:
-                intent = msg.tool_calls[0]['name'].upper()
-                break
-                
-        return {
-            "response": final_msg,
-            "intent": intent
-        }
+        return {"response": result["messages"][-1].content}
     except Exception as e:
-        return {"response": f"Error: {str(e)}", "intent": "ERROR"}
+        return {"response": f"Error: {str(e)}"}
