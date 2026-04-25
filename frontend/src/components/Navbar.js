@@ -14,14 +14,8 @@ const Navbar = () => {
   };
 
   return (
-    <nav style={{
+    <nav className="navbar-container" style={{
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '0 24px',
-      height: '64px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
       fontFamily: 'Inter, sans-serif',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -29,7 +23,7 @@ const Navbar = () => {
         <span style={{ color: 'white', fontWeight: '700', fontSize: '20px' }}>HCP CRM</span>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+      <div className="navbar-links">
         <button onClick={() => navigate('/dashboard')} style={navBtnStyle}>
           📊 Dashboard
         </button>

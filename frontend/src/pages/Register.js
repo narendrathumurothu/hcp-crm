@@ -19,9 +19,9 @@ const Register = () => {
   };
 
   return (
-    <div style={containerStyle}>
+    <div className="auth-container">
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <div style={cardStyle}>
+      <div className="auth-card">
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <span style={{ fontSize: '48px' }}>💊</span>
           <h1 style={titleStyle}>HCP CRM</h1>
@@ -97,23 +97,7 @@ const Register = () => {
   );
 };
 
-const containerStyle = {
-  minHeight: '100vh',
-  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontFamily: 'Inter, sans-serif',
-};
 
-const cardStyle = {
-  background: 'white',
-  borderRadius: '16px',
-  padding: '40px',
-  width: '100%',
-  maxWidth: '420px',
-  boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-};
 
 const titleStyle = {
   fontSize: '28px',

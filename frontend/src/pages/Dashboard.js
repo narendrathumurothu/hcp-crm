@@ -43,11 +43,11 @@ const Dashboard = () => {
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <Navbar />
 
-      <div style={{ padding: '32px', maxWidth: '1200px', margin: '0 auto' }}>
+      <div className="main-container">
 
         {/* Stats Cards */}
         {stats && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px' }}>
+          <div className="stats-grid">
             <div style={statCardStyle('#667eea')}>
               <div style={{ fontSize: '32px', fontWeight: '700', color: 'white' }}>{stats.total_interactions}</div>
               <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '14px' }}>Total Interactions</div>
@@ -68,7 +68,7 @@ const Dashboard = () => {
         )}
 
         {/* Search Bar */}
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+        <div className="search-bar-container">
           <input
             type="text"
             placeholder="🔍 Search by HCP name, topic, sentiment..."
@@ -95,7 +95,7 @@ const Dashboard = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {displayList.map((interaction) => (
               <div key={interaction.id} style={cardStyle}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} className="interaction-card-content">
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                       <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
@@ -147,7 +147,7 @@ const Dashboard = () => {
                     </p>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginLeft: '16px' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: '16px' }} className="interaction-card-actions">
                     <button
                       onClick={() => navigate(`/log?edit=${interaction.id}`)}
                       style={editBtnStyle}

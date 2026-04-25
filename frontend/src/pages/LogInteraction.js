@@ -155,7 +155,7 @@ const LogInteraction = () => {
         </div>
       )}
 
-      <div style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 340px', gap: '20px' }}>
+      <div className="log-container">
 
         {/* LEFT - Form */}
         <div style={panelStyle}>
@@ -163,7 +163,7 @@ const LogInteraction = () => {
             {editId ? '✏️ Edit HCP Interaction' : '📋 Log HCP Interaction'}
           </h2>
 
-          <div style={rowStyle}>
+          <div className="form-row">
             <div style={fieldStyle}>
               <label style={labelStyle}>HCP Name *</label>
               <input
@@ -188,7 +188,7 @@ const LogInteraction = () => {
             </div>
           </div>
 
-          <div style={rowStyle}>
+          <div className="form-row">
             <div style={fieldStyle}>
               <label style={labelStyle}>Date</label>
               <input
@@ -240,7 +240,7 @@ const LogInteraction = () => {
             />
           </div>
 
-          <div style={rowStyle}>
+          <div className="form-row">
             <div style={fieldStyle}>
               <label style={labelStyle}>Materials Shared</label>
               <input
@@ -263,7 +263,7 @@ const LogInteraction = () => {
 
           <div style={fieldStyle}>
             <label style={labelStyle}>HCP Sentiment</label>
-            <div style={{ display: 'flex', gap: '16px' }}>
+            <div className="sentiment-options">
               {['Positive', 'Neutral', 'Negative'].map((s) => (
                 <label
                   key={s}
@@ -423,7 +423,6 @@ const panelTitle = {
   paddingBottom: '12px',
   borderBottom: '1px solid #e5e7eb',
 };
-const rowStyle = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' };
 const fieldStyle = { marginBottom: '16px' };
 const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '500', color: '#374151', marginBottom: '6px' };
 const inputStyle = { width: '100%', padding: '10px 14px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', fontFamily: 'Inter, sans-serif', outline: 'none', boxSizing: 'border-box' };
