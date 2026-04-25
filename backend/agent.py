@@ -98,7 +98,27 @@ def edit_interaction(hcp_name_or_id: str, field_to_update: str, new_value: str) 
         return json.dumps({"status": "error", "message": str(e)})
 
 @tool
-def add_reminder(hcp_name: str, task: str, date: str, time: str) -> str:
+def delete_interaction(hcp_name_or_id: str) -> str:
+    """Delete an existing interaction record."""
+    try:
+        with SessionLocal() as db:
+            try:
+                i_id = int(str(hcp_name_or_id).strip())
+                record = db.query(Interaction).filter(Interaction.id == i_id).first()
+            except ValueError:
+                record = db.query(Interaction).filter(Interaction.hcp_name.ilike(f"%{hcp_name_or_id}%")).order_by(Interaction.created_at.desc()).first()
+
+            if not record:
+                return json.dumps({"status": "error", "message": "Interaction not found."})
+
+            db.delete(record)
+            db.commit()
+            return json.dumps({"status": "success", "message": f"Deleted interaction for {record.hcp_name}"})
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+@tool
+def add_reminder(hcp_name: str, task: str, date: Optional[str] = None, time: Optional[str] = None) -> str:
     """Set a reminder for a future task."""
     try:
         with SessionLocal() as db:
@@ -110,7 +130,7 @@ def add_reminder(hcp_name: str, task: str, date: str, time: str) -> str:
         return json.dumps({"status": "error", "message": str(e)})
 
 @tool
-def track_sample(hcp_name: str, medicine_name: str, quantity: int) -> str:
+def track_sample(hcp_name: str, medicine_name: str, quantity: Optional[int] = 1) -> str:
     """Track medical samples distributed."""
     try:
         with SessionLocal() as db:
@@ -139,14 +159,20 @@ def get_hcp_profile(hcp_name: str) -> str:
 class AgentState(TypedDict):
     messages: Annotated[list, operator.add]
 
-tools = [log_interaction, edit_interaction, add_reminder, track_sample, get_hcp_profile]
+tools = [log_interaction, edit_interaction, delete_interaction, add_reminder, track_sample, get_hcp_profile]
 tool_node = ToolNode(tools)
 llm_with_tools = llm.bind_tools(tools)
 
-SYSTEM_PROMPT = """You are a Pharmaceutical CRM Assistant. 
-1. DO NOT guess update values. Ask if missing.
-2. Respond in the same language the user uses (Telugu, Hindi, or English).
-3. Use thread history to remember the current doctor."""
+SYSTEM_PROMPT = """You are an expert Pharmaceutical CRM Assistant. Your goal is to help medical sales representatives log their field activities accurately and efficiently.
+1. ALWAYS use the provided tools to log data based on the user's input.
+2. If the user mentions an interaction, USE the `log_interaction` tool. Extract the HCP name, topics, sentiment, outcomes, and follow up actions.
+3. If the user asks to edit or change a record, USE the `edit_interaction` tool.
+4. If the user asks to delete or remove a record, USE the `delete_interaction` tool.
+5. If the user mentions giving a sample, USE the `track_sample` tool.
+6. If the user mentions a follow-up or scheduling something in the future, USE the `add_reminder` tool.
+7. DO NOT guess update values. Ask if missing.
+8. Respond in the same language the user uses (Telugu, Hindi, or English).
+9. Use thread history to remember the current doctor."""
 
 def agent_node(state: AgentState):
     messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
