@@ -2,7 +2,7 @@ import operator
 import json
 import os
 import sqlite3
-from typing import TypedDict, Annotated
+from typing import TypedDict, Annotated, Optional
 from dotenv import load_dotenv
 
 from langchain_groq import ChatGroq
@@ -30,18 +30,50 @@ llm = ChatGroq(
 # ──────────────────────────────────────────────────────────
 
 @tool
-def log_interaction(text: str) -> str:
+def log_interaction(
+    hcp_name: str, 
+    interaction_type: str = "Meeting",
+    date: Optional[str] = None,
+    time: Optional[str] = None,
+    attendees: Optional[str] = None,
+    topics: Optional[str] = None,
+    materials_shared: Optional[str] = None,
+    samples_distributed: Optional[str] = None,
+    sentiment: str = "Neutral",
+    outcomes: Optional[str] = None,
+    follow_up_actions: Optional[str] = None
+) -> str:
     """Extract and log a new HCP interaction."""
-    prompt = f"Extract interaction details from: {text}. Return ONLY valid JSON."
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
-        data = json.loads(response.content.strip().replace("```json", "").replace("```", ""))
         with SessionLocal() as db:
-            interaction = Interaction(**data)
+            interaction = Interaction(
+                hcp_name=hcp_name,
+                interaction_type=interaction_type,
+                date=date,
+                time=time,
+                attendees=attendees,
+                topics=topics,
+                materials_shared=materials_shared,
+                samples_distributed=samples_distributed,
+                sentiment=sentiment,
+                outcomes=outcomes,
+                follow_up_actions=follow_up_actions
+            )
             db.add(interaction)
             db.commit()
             db.refresh(interaction)
-            return json.dumps({"status": "success", "id": interaction.id, "hcp": interaction.hcp_name})
+            return json.dumps({
+                "status": "success", 
+                "id": interaction.id, 
+                "hcp": interaction.hcp_name,
+                "extracted_data": {
+                    "hcp_name": interaction.hcp_name,
+                    "topics": interaction.topics,
+                    "sentiment": interaction.sentiment,
+                    "outcomes": interaction.outcomes,
+                    "follow_up_actions": interaction.follow_up_actions
+                }
+            })
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
@@ -141,6 +173,17 @@ def run_agent(message: str, thread_id: str = "default_session"):
     config = {"configurable": {"thread_id": thread_id}}
     try:
         result = app_graph.invoke({"messages": [HumanMessage(content=message)]}, config)
-        return {"response": result["messages"][-1].content}
+        
+        response_data = {"response": result["messages"][-1].content}
+        
+        # Check if the AI used the log_interaction tool and return the extracted data to frontend
+        for msg in reversed(result["messages"]):
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    if tc["name"] == "log_interaction":
+                        response_data["extracted_data"] = tc["args"]
+                        break
+        
+        return response_data
     except Exception as e:
         return {"response": f"Error: {str(e)}"}
