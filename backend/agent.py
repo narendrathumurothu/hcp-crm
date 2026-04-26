@@ -20,7 +20,7 @@ from models import Interaction, Reminder, SampleInventory
 load_dotenv()
 
 llm = ChatGroq(
-    model="llama-3.1-8b-instant",
+    model="llama-3.3-70b-versatile",
     api_key=os.getenv("GROQ_API_KEY", ""),
     temperature=0.1
 )
@@ -175,8 +175,17 @@ SYSTEM_PROMPT = """You are an expert Pharmaceutical CRM Assistant. Your goal is 
 9. Use thread history to remember the current doctor."""
 
 def agent_node(state: AgentState):
-    messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
-    return {"messages": [llm_with_tools.invoke(messages)]}
+    messages = state["messages"]
+    
+    # Trim history to the last 2 HumanMessages to avoid token limit errors (TPM limits)
+    human_indices = [i for i, msg in enumerate(messages) if isinstance(msg, HumanMessage)]
+    if len(human_indices) > 2:
+        trimmed_messages = messages[human_indices[-2]:]
+    else:
+        trimmed_messages = messages
+        
+    final_messages = [SystemMessage(content=SYSTEM_PROMPT)] + trimmed_messages
+    return {"messages": [llm_with_tools.invoke(final_messages)]}
 
 def should_continue(state: AgentState):
     last = state["messages"][-1]
